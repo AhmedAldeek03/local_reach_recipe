@@ -7,10 +7,21 @@ recipes:
 install:
   - canvas
 config:
-  # A recipe skips a module's default config, but Canvas needs its own (text
-  # formats, image styles, the global asset library) to work at all.
+  # A recipe skips a module's default config, but Canvas needs its own (image
+  # styles, the global asset library, text formats) to work at all. Its two
+  # CKEditor configs are left out: these components have no formatted-text
+  # props, and on sites with extra CKEditor plugins (for example Editor
+  # Advanced Link on Seeds) Canvas's editor config fails validation.
   import:
-    canvas: '*'
+    canvas:
+      - canvas.asset_library.global
+      - canvas.brand_kit.global
+      - canvas.component.marker.page_content
+      - canvas.settings
+      - filter.format.canvas_html_block
+      - filter.format.canvas_html_inline
+      - image.style.canvas_avatar
+      - image.style.canvas_parametrized_width
   # Only the code components are shipped. Canvas creates their component
   # entries itself after the recipe is applied.
   strict: false
