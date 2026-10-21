@@ -7,6 +7,10 @@ recipes:
 install:
   - canvas
 config:
+  # A recipe skips a module's default config, but Canvas needs its own (text
+  # formats, image styles, the global asset library) to work at all.
+  import:
+    canvas: '*'
   # Only the code components are shipped. Canvas creates their component
   # entries itself after the recipe is applied.
   strict: false
