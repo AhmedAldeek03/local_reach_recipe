@@ -1,0 +1,12 @@
+name: 'Local Reach'
+description: 'Provides the Local Reach components (key figures, progress bars, ring charts, country flags and institution summary) as Drupal Canvas code components.'
+type: 'Content type'
+recipes:
+  # Image props use the media library and need an Image media type.
+  - core/recipes/image_media_type
+install:
+  - canvas
+config:
+  # Only the code components are shipped. Canvas creates their component
+  # entries itself after the recipe is applied.
+  strict: false

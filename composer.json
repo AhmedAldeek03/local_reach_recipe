@@ -1,0 +1,10 @@
+{
+    "name": "drupal/local_reach_recipe",
+    "description": "Local Reach components (key figures, progress bars, ring charts, country flags, institution summary) as Drupal Canvas code components.",
+    "type": "drupal-recipe",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "drupal/core": "^11.3",
+        "drupal/canvas": "^1.12"
+    }
+}

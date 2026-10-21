@@ -1,0 +1,697 @@
+langcode: en
+status: true
+dependencies: {  }
+machineName: lr_ring_charts
+name: 'Local Reach: Ring charts'
+required:
+  - labels
+  - percentages
+props:
+  title:
+    title: Title
+    type: string
+    examples:
+      - 'Our impact'
+  icon:
+    title: Icon
+    type: object
+    $ref: 'json-schema-definitions://canvas.module/image'
+    examples:
+      -
+        src: 'https://placehold.co/56x56@2x.png?text=Icon'
+        width: 56
+        height: 56
+        alt: Icon
+  iconBackground:
+    title: 'Icon background color'
+    type: string
+    examples:
+      - '#d0eefb'
+  titleColor:
+    title: 'Title color'
+    type: string
+    examples:
+      - '#000000'
+  background:
+    title: 'Background color'
+    type: string
+    examples:
+      - '#f9f5ee'
+  labels:
+    title: Labels
+    type: array
+    items:
+      type: string
+    examples:
+      -
+        - Women
+        - Youth
+        - Elderly
+    minItems: 1
+  percentages:
+    title: 'Percentages (same order as labels)'
+    type: array
+    items:
+      type: integer
+    examples:
+      -
+        - 62
+        - 45
+        - 18
+    minItems: 1
+  numbers:
+    title: 'Numbers under the percentage (optional, same order)'
+    type: array
+    items:
+      type: integer
+    examples:
+      -
+        - 3100
+        - 2250
+        - 900
+  ringColor:
+    title: 'Ring color'
+    type: string
+    examples:
+      - '#be9f56'
+  numberColor:
+    title: 'Number color'
+    type: string
+    examples:
+      - '#be9f56'
+  textColor:
+    title: 'Text color'
+    type: string
+    examples:
+      - '#2d2f33'
+slots: {  }
+js:
+  original: |
+    import { useEffect, useRef, useState } from 'preact/hooks';
+
+    // Counts a number up from 0 when it scrolls into view, like the original
+    // Local Reach blocks. Only values with exactly one number are animated
+    // ("1,200", "85%", "$3.5M"); anything else is shown as is.
+    const LR_DURATION = 2200;
+    const LR_NUMBER = /^([^\d]*?)(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?([^\d]*)$/;
+
+    function lrParse(text) {
+      const m = text.match(LR_NUMBER);
+      if (!m) return null;
+      const decimals = m[3] ? m[3].length - 1 : 0;
+      const target = parseFloat(m[2].replace(/,/g, '') + (m[3] || ''));
+      if (!isFinite(target)) return null;
+      return {
+        prefix: m[1], suffix: m[4], target, decimals,
+        formatter: new Intl.NumberFormat('en-US', {
+          minimumFractionDigits: decimals,
+          maximumFractionDigits: decimals,
+          useGrouping: m[2].indexOf(',') !== -1,
+        }),
+      };
+    }
+
+    function lrFormat(value, data) {
+      return data.prefix + data.formatter.format(value) + data.suffix;
+    }
+
+    function CountUp({ value }) {
+      const text = String(value ?? '').trim();
+      const data = lrParse(text);
+      const ref = useRef(null);
+      const [shown, setShown] = useState(data ? lrFormat(0, data) : text);
+
+      useEffect(() => {
+        if (!data) return undefined;
+        const reduced = !('IntersectionObserver' in window) ||
+          window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (reduced) {
+          setShown(text);
+          return undefined;
+        }
+        setShown(lrFormat(0, data));
+        let frame;
+        const observer = new IntersectionObserver((entries) => {
+          if (!entries[0].isIntersecting) return;
+          observer.disconnect();
+          let start = 0;
+          const factor = Math.pow(10, data.decimals);
+          const step = (time) => {
+            if (!start) start = time;
+            const progress = Math.min((time - start) / LR_DURATION, 1);
+            const current = progress < 1 ? Math.floor(progress * data.target * factor) / factor : data.target;
+            setShown(lrFormat(current, data));
+            if (progress < 1) frame = window.requestAnimationFrame(step);
+          };
+          frame = window.requestAnimationFrame(step);
+        }, { threshold: 1 });
+        observer.observe(ref.current);
+        return () => {
+          observer.disconnect();
+          window.cancelAnimationFrame(frame);
+        };
+      }, [text]);
+
+      if (!data) return text;
+      // The final value stays in the layout (transparent) so the width never
+      // changes and screen readers read it; the animated value sits on top.
+      return (
+        <span ref={ref} className="local-reach-count-up">
+          <span className="local-reach-count-up__final">{text}</span>
+          <span className="local-reach-count-up__value" aria-hidden="true">{shown}</span>
+        </span>
+      );
+    }
+
+    const RADIUS = 74.73;
+    const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+
+    export default function RingCharts({
+      title,
+      icon,
+      iconBackground = '#d0eefb',
+      titleColor = '#000000',
+      background = '#f9f5ee',
+      labels = [],
+      percentages = [],
+      numbers = [],
+      ringColor = '#be9f56',
+      numberColor = '#be9f56',
+      textColor = '#2d2f33',
+    }) {
+      return (
+        <div className="local-reach-rings" style={{ '--lr-bg': background }}>
+          {(title || icon?.src) && (
+            <div className="local-reach-rings__header">
+              {icon?.src && (
+                <div className="local-reach-rings__header-icon-wrapper" style={{ backgroundColor: iconBackground }}>
+                  <img className="local-reach-rings__header-icon" src={icon.src} alt="" aria-hidden="true" />
+                </div>
+              )}
+              {title && (
+                <h2 className="local-reach-rings__header-title" style={{ color: titleColor }}>{title}</h2>
+              )}
+            </div>
+          )}
+          <div className="local-reach-rings__items">
+            {labels.map((label, i) => {
+              const pct = Math.max(0, Math.min(100, Number(percentages[i] ?? 0)));
+              const dash = Math.round((pct / 100) * CIRCUMFERENCE * 1000) / 1000;
+              const number = numbers[i] !== undefined && numbers[i] !== null && numbers[i] !== ''
+                ? Number(numbers[i]).toLocaleString('en-US') : '';
+              return (
+                <div
+                  key={i}
+                  className="local-reach-ring"
+                  style={{ '--lr-ring-color': ringColor, '--lr-text-color': textColor, '--lr-number-color': numberColor }}
+                >
+                  <div className="local-reach-ring__chart">
+                    <svg viewBox="0 0 159 159" role="img" aria-label={`${label}: ${pct}%`}>
+                      <circle className="local-reach-ring__track" cx="79.5" cy="79.5" r={RADIUS} />
+                      <circle
+                        className="local-reach-ring__value"
+                        cx="79.5"
+                        cy="79.5"
+                        r={RADIUS}
+                        strokeDasharray={`${dash} ${Math.round(CIRCUMFERENCE * 1000) / 1000}`}
+                      />
+                    </svg>
+                    <div className="local-reach-ring__text">
+                      <span className="local-reach-ring__percent"><CountUp value={`${pct}%`} /></span>
+                      {number && <span className="local-reach-ring__number"><CountUp value={number} /></span>}
+                    </div>
+                  </div>
+                  <div className="local-reach-ring__label">{label}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+  compiled: |
+    import { jsx, jsxs } from "react/jsx-runtime";
+    import { useEffect, useRef, useState } from "preact/hooks";
+    const LR_DURATION = 2200;
+    const LR_NUMBER = /^([^\d]*?)(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?([^\d]*)$/;
+    function lrParse(text) {
+      const m = text.match(LR_NUMBER);
+      if (!m) return null;
+      const decimals = m[3] ? m[3].length - 1 : 0;
+      const target = parseFloat(m[2].replace(/,/g, "") + (m[3] || ""));
+      if (!isFinite(target)) return null;
+      return {
+        prefix: m[1],
+        suffix: m[4],
+        target,
+        decimals,
+        formatter: new Intl.NumberFormat("en-US", {
+          minimumFractionDigits: decimals,
+          maximumFractionDigits: decimals,
+          useGrouping: m[2].indexOf(",") !== -1
+        })
+      };
+    }
+    function lrFormat(value, data) {
+      return data.prefix + data.formatter.format(value) + data.suffix;
+    }
+    function CountUp({ value }) {
+      const text = String(value ?? "").trim();
+      const data = lrParse(text);
+      const ref = useRef(null);
+      const [shown, setShown] = useState(data ? lrFormat(0, data) : text);
+      useEffect(() => {
+        if (!data) return void 0;
+        const reduced = !("IntersectionObserver" in window) || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        if (reduced) {
+          setShown(text);
+          return void 0;
+        }
+        setShown(lrFormat(0, data));
+        let frame;
+        const observer = new IntersectionObserver((entries) => {
+          if (!entries[0].isIntersecting) return;
+          observer.disconnect();
+          let start = 0;
+          const factor = Math.pow(10, data.decimals);
+          const step = (time) => {
+            if (!start) start = time;
+            const progress = Math.min((time - start) / LR_DURATION, 1);
+            const current = progress < 1 ? Math.floor(progress * data.target * factor) / factor : data.target;
+            setShown(lrFormat(current, data));
+            if (progress < 1) frame = window.requestAnimationFrame(step);
+          };
+          frame = window.requestAnimationFrame(step);
+        }, { threshold: 1 });
+        observer.observe(ref.current);
+        return () => {
+          observer.disconnect();
+          window.cancelAnimationFrame(frame);
+        };
+      }, [text]);
+      if (!data) return text;
+      return /* @__PURE__ */ jsxs("span", { ref, className: "local-reach-count-up", children: [
+        /* @__PURE__ */ jsx("span", { className: "local-reach-count-up__final", children: text }),
+        /* @__PURE__ */ jsx("span", { className: "local-reach-count-up__value", "aria-hidden": "true", children: shown })
+      ] });
+    }
+    const RADIUS = 74.73;
+    const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+    function RingCharts({
+      title,
+      icon,
+      iconBackground = "#d0eefb",
+      titleColor = "#000000",
+      background = "#f9f5ee",
+      labels = [],
+      percentages = [],
+      numbers = [],
+      ringColor = "#be9f56",
+      numberColor = "#be9f56",
+      textColor = "#2d2f33"
+    }) {
+      return /* @__PURE__ */ jsxs("div", { className: "local-reach-rings", style: { "--lr-bg": background }, children: [
+        (title || icon?.src) && /* @__PURE__ */ jsxs("div", { className: "local-reach-rings__header", children: [
+          icon?.src && /* @__PURE__ */ jsx("div", { className: "local-reach-rings__header-icon-wrapper", style: { backgroundColor: iconBackground }, children: /* @__PURE__ */ jsx("img", { className: "local-reach-rings__header-icon", src: icon.src, alt: "", "aria-hidden": "true" }) }),
+          title && /* @__PURE__ */ jsx("h2", { className: "local-reach-rings__header-title", style: { color: titleColor }, children: title })
+        ] }),
+        /* @__PURE__ */ jsx("div", { className: "local-reach-rings__items", children: labels.map((label, i) => {
+          const pct = Math.max(0, Math.min(100, Number(percentages[i] ?? 0)));
+          const dash = Math.round(pct / 100 * CIRCUMFERENCE * 1e3) / 1e3;
+          const number = numbers[i] !== void 0 && numbers[i] !== null && numbers[i] !== "" ? Number(numbers[i]).toLocaleString("en-US") : "";
+          return /* @__PURE__ */ jsxs(
+            "div",
+            {
+              className: "local-reach-ring",
+              style: { "--lr-ring-color": ringColor, "--lr-text-color": textColor, "--lr-number-color": numberColor },
+              children: [
+                /* @__PURE__ */ jsxs("div", { className: "local-reach-ring__chart", children: [
+                  /* @__PURE__ */ jsxs("svg", { viewBox: "0 0 159 159", role: "img", "aria-label": `${label}: ${pct}%`, children: [
+                    /* @__PURE__ */ jsx("circle", { className: "local-reach-ring__track", cx: "79.5", cy: "79.5", r: RADIUS }),
+                    /* @__PURE__ */ jsx(
+                      "circle",
+                      {
+                        className: "local-reach-ring__value",
+                        cx: "79.5",
+                        cy: "79.5",
+                        r: RADIUS,
+                        strokeDasharray: `${dash} ${Math.round(CIRCUMFERENCE * 1e3) / 1e3}`
+                      }
+                    )
+                  ] }),
+                  /* @__PURE__ */ jsxs("div", { className: "local-reach-ring__text", children: [
+                    /* @__PURE__ */ jsx("span", { className: "local-reach-ring__percent", children: /* @__PURE__ */ jsx(CountUp, { value: `${pct}%` }) }),
+                    number && /* @__PURE__ */ jsx("span", { className: "local-reach-ring__number", children: /* @__PURE__ */ jsx(CountUp, { value: number }) })
+                  ] })
+                ] }),
+                /* @__PURE__ */ jsx("div", { className: "local-reach-ring__label", children: label })
+              ]
+            },
+            i
+          );
+        }) })
+      ] });
+    }
+    export {
+      RingCharts as default
+    };
+css:
+  original: |
+    .local-reach-count-up {
+      display: inline-grid;
+    }
+
+    .local-reach-count-up__final,
+    .local-reach-count-up__value {
+      grid-area: 1 / 1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .local-reach-count-up__final {
+      opacity: 0;
+    }
+
+    .local-reach-rings {
+      padding: 2.25rem;
+      border-radius: 1.5rem;
+      background: var(--lr-bg, #faf9f5);
+      box-sizing: border-box;
+    }
+
+    /* Header styling */
+    .local-reach-rings__header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 2rem;
+      padding-left: 0.5rem;
+    }
+
+    .local-reach-rings__header-icon-wrapper {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 3rem;
+      height: 3rem;
+      border-radius: 0.75rem;
+      box-sizing: border-box;
+      flex-shrink: 0;
+    }
+
+    /* Inner SVG image inside the wrapper */
+    .local-reach-rings__header-icon {
+      width: 2rem;
+      height: 2rem;
+      object-fit: contain;
+      display: block;
+    }
+
+    .local-reach-rings__header-title {
+      margin: 0;
+      font-size: 2rem;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    /* Flex items container */
+    .local-reach-rings__items {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      row-gap: 2rem;
+    }
+
+    /* col-3: four charts per row. */
+    .local-reach-ring {
+      --lr-ring-color: #c0a84f;
+      --lr-text-color: #c0a84f;
+      /* Number falls back to the ring color if not set inline. */
+      --lr-number-color: var(--lr-ring-color);
+      flex: 0 0 25%;
+      max-width: 25%;
+      box-sizing: border-box;
+      padding: 0 0.75rem;
+      text-align: center;
+    }
+
+    .local-reach-ring__chart {
+      position: relative;
+      width: 100%;
+      max-width: 159px;
+      aspect-ratio: 1 / 1;
+      margin: 0 auto 0.5rem;
+    }
+
+    .local-reach-ring circle {
+      fill: none;
+      stroke: var(--lr-ring-color);
+      stroke-width: 9.54;
+    }
+
+    .local-reach-ring__track {
+      opacity: 0.3;
+    }
+
+    .local-reach-ring__chart > svg {
+      width: 100%;
+      height: 100%;
+      transform: rotate(-90deg); /* start at 12 o'clock */
+    }
+
+    .local-reach-ring__text {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--lr-text-color);
+    }
+
+    .local-reach-ring__percent {
+      font-size: 2.5rem;
+      line-height: 1.2;
+      font-weight: 400;
+    }
+
+    /* Only nudge the percentage down when a number is shown below it. */
+    .local-reach-ring__percent:has(+ .local-reach-ring__number) {
+      margin-top: 10px;
+    }
+
+    .local-reach-ring__number {
+      font-size: 1.125rem;
+      color: var(--lr-number-color);
+    }
+
+    .local-reach-ring__label {
+      color: #2d2f33;
+      font-size: 1.125rem;
+      font-weight: 400;
+      line-height: 1.2;
+    }
+
+    @media (max-width: 1279.98px) {
+      .local-reach-rings {
+        margin-top: 24px;
+      }
+    }
+
+    @media (max-width: 1023.98px) {
+      .local-reach-rings__header-title {
+        font-size: 1.5rem;
+      }
+      .local-reach-ring__percent {
+        font-size: 2.5rem;
+      }
+      .local-reach-ring__percent:has(+ .local-reach-ring__number) {
+        margin-top: 0;
+      }
+      .local-reach-ring__number {
+        font-size: 1rem;
+      }
+      .local-reach-ring__label {
+        font-size: 1rem;
+      }
+      .local-reach-ring {
+        flex-basis: 50%;
+        max-width: 50%;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .local-reach-ring {
+        flex-basis: 100%;
+        max-width: 100%;
+      }
+    }
+  compiled: |
+    .local-reach-count-up {
+      display: inline-grid;
+    }
+
+    .local-reach-count-up__final,
+    .local-reach-count-up__value {
+      grid-area: 1 / 1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .local-reach-count-up__final {
+      opacity: 0;
+    }
+
+    .local-reach-rings {
+      padding: 2.25rem;
+      border-radius: 1.5rem;
+      background: var(--lr-bg, #faf9f5);
+      box-sizing: border-box;
+    }
+
+    /* Header styling */
+    .local-reach-rings__header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 2rem;
+      padding-left: 0.5rem;
+    }
+
+    .local-reach-rings__header-icon-wrapper {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 3rem;
+      height: 3rem;
+      border-radius: 0.75rem;
+      box-sizing: border-box;
+      flex-shrink: 0;
+    }
+
+    /* Inner SVG image inside the wrapper */
+    .local-reach-rings__header-icon {
+      width: 2rem;
+      height: 2rem;
+      object-fit: contain;
+      display: block;
+    }
+
+    .local-reach-rings__header-title {
+      margin: 0;
+      font-size: 2rem;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    /* Flex items container */
+    .local-reach-rings__items {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      row-gap: 2rem;
+    }
+
+    /* col-3: four charts per row. */
+    .local-reach-ring {
+      --lr-ring-color: #c0a84f;
+      --lr-text-color: #c0a84f;
+      /* Number falls back to the ring color if not set inline. */
+      --lr-number-color: var(--lr-ring-color);
+      flex: 0 0 25%;
+      max-width: 25%;
+      box-sizing: border-box;
+      padding: 0 0.75rem;
+      text-align: center;
+    }
+
+    .local-reach-ring__chart {
+      position: relative;
+      width: 100%;
+      max-width: 159px;
+      aspect-ratio: 1 / 1;
+      margin: 0 auto 0.5rem;
+    }
+
+    .local-reach-ring circle {
+      fill: none;
+      stroke: var(--lr-ring-color);
+      stroke-width: 9.54;
+    }
+
+    .local-reach-ring__track {
+      opacity: 0.3;
+    }
+
+    .local-reach-ring__chart > svg {
+      width: 100%;
+      height: 100%;
+      transform: rotate(-90deg); /* start at 12 o'clock */
+    }
+
+    .local-reach-ring__text {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--lr-text-color);
+    }
+
+    .local-reach-ring__percent {
+      font-size: 2.5rem;
+      line-height: 1.2;
+      font-weight: 400;
+    }
+
+    /* Only nudge the percentage down when a number is shown below it. */
+    .local-reach-ring__percent:has(+ .local-reach-ring__number) {
+      margin-top: 10px;
+    }
+
+    .local-reach-ring__number {
+      font-size: 1.125rem;
+      color: var(--lr-number-color);
+    }
+
+    .local-reach-ring__label {
+      color: #2d2f33;
+      font-size: 1.125rem;
+      font-weight: 400;
+      line-height: 1.2;
+    }
+
+    @media (max-width: 1279.98px) {
+      .local-reach-rings {
+        margin-top: 24px;
+      }
+    }
+
+    @media (max-width: 1023.98px) {
+      .local-reach-rings__header-title {
+        font-size: 1.5rem;
+      }
+      .local-reach-ring__percent {
+        font-size: 2.5rem;
+      }
+      .local-reach-ring__percent:has(+ .local-reach-ring__number) {
+        margin-top: 0;
+      }
+      .local-reach-ring__number {
+        font-size: 1rem;
+      }
+      .local-reach-ring__label {
+        font-size: 1rem;
+      }
+      .local-reach-ring {
+        flex-basis: 50%;
+        max-width: 50%;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .local-reach-ring {
+        flex-basis: 100%;
+        max-width: 100%;
+      }
+    }
+dataDependencies: {  }

@@ -1,0 +1,543 @@
+langcode: en
+status: true
+dependencies: {  }
+machineName: lr_progress_bars
+name: 'Local Reach: Progress bars'
+required:
+  - titles
+  - numbers
+  - total
+props:
+  titles:
+    title: Titles
+    type: array
+    items:
+      type: string
+    examples:
+      -
+        - Education
+        - Health
+        - Housing
+    minItems: 1
+  numbers:
+    title: 'Numbers (same order as titles)'
+    type: array
+    items:
+      type: integer
+    examples:
+      -
+        - 640
+        - 420
+        - 180
+    minItems: 1
+  total:
+    title: 'Total (100%)'
+    type: integer
+    examples:
+      - 1000
+  icons:
+    title: 'Icons (same order as titles)'
+    type: array
+    items:
+      type: object
+      $ref: 'json-schema-definitions://canvas.module/image'
+    examples:
+      -
+        -
+          src: 'https://placehold.co/48x48@2x.png?text=1'
+          width: 48
+          height: 48
+          alt: '1'
+        -
+          src: 'https://placehold.co/48x48@2x.png?text=2'
+          width: 48
+          height: 48
+          alt: '2'
+        -
+          src: 'https://placehold.co/48x48@2x.png?text=3'
+          width: 48
+          height: 48
+          alt: '3'
+  background:
+    title: 'Background color'
+    type: string
+    examples:
+      - '#f2f7fb'
+  lineColor:
+    title: 'Bar color'
+    type: string
+    examples:
+      - '#1f2a90'
+  iconBackground:
+    title: 'Icon background color'
+    type: string
+    examples:
+      - '#b5dbe9'
+slots: {  }
+js:
+  original: |
+    import { useEffect, useRef, useState } from 'preact/hooks';
+
+    // Counts a number up from 0 when it scrolls into view, like the original
+    // Local Reach blocks. Only values with exactly one number are animated
+    // ("1,200", "85%", "$3.5M"); anything else is shown as is.
+    const LR_DURATION = 2200;
+    const LR_NUMBER = /^([^\d]*?)(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?([^\d]*)$/;
+
+    function lrParse(text) {
+      const m = text.match(LR_NUMBER);
+      if (!m) return null;
+      const decimals = m[3] ? m[3].length - 1 : 0;
+      const target = parseFloat(m[2].replace(/,/g, '') + (m[3] || ''));
+      if (!isFinite(target)) return null;
+      return {
+        prefix: m[1], suffix: m[4], target, decimals,
+        formatter: new Intl.NumberFormat('en-US', {
+          minimumFractionDigits: decimals,
+          maximumFractionDigits: decimals,
+          useGrouping: m[2].indexOf(',') !== -1,
+        }),
+      };
+    }
+
+    function lrFormat(value, data) {
+      return data.prefix + data.formatter.format(value) + data.suffix;
+    }
+
+    function CountUp({ value }) {
+      const text = String(value ?? '').trim();
+      const data = lrParse(text);
+      const ref = useRef(null);
+      const [shown, setShown] = useState(data ? lrFormat(0, data) : text);
+
+      useEffect(() => {
+        if (!data) return undefined;
+        const reduced = !('IntersectionObserver' in window) ||
+          window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (reduced) {
+          setShown(text);
+          return undefined;
+        }
+        setShown(lrFormat(0, data));
+        let frame;
+        const observer = new IntersectionObserver((entries) => {
+          if (!entries[0].isIntersecting) return;
+          observer.disconnect();
+          let start = 0;
+          const factor = Math.pow(10, data.decimals);
+          const step = (time) => {
+            if (!start) start = time;
+            const progress = Math.min((time - start) / LR_DURATION, 1);
+            const current = progress < 1 ? Math.floor(progress * data.target * factor) / factor : data.target;
+            setShown(lrFormat(current, data));
+            if (progress < 1) frame = window.requestAnimationFrame(step);
+          };
+          frame = window.requestAnimationFrame(step);
+        }, { threshold: 1 });
+        observer.observe(ref.current);
+        return () => {
+          observer.disconnect();
+          window.cancelAnimationFrame(frame);
+        };
+      }, [text]);
+
+      if (!data) return text;
+      // The final value stays in the layout (transparent) so the width never
+      // changes and screen readers read it; the animated value sits on top.
+      return (
+        <span ref={ref} className="local-reach-count-up">
+          <span className="local-reach-count-up__final">{text}</span>
+          <span className="local-reach-count-up__value" aria-hidden="true">{shown}</span>
+        </span>
+      );
+    }
+
+    export default function ProgressBars({
+      titles = [],
+      numbers = [],
+      total = 0,
+      icons = [],
+      background = '#f2f7fb',
+      lineColor = '#1f2a90',
+      iconBackground = '#b5dbe9',
+    }) {
+      const hasIcons = icons.some((icon) => icon?.src);
+      return (
+        <div
+          className="local-reach-bars"
+          style={{ '--lr-bg': background, '--lr-line': lineColor, '--lr-icon-bg': iconBackground }}
+        >
+          <ul className="local-reach-bars__list">
+            {titles.map((title, i) => {
+              const number = Number(numbers[i] ?? 0);
+              const percent = total > 0 ? Math.round(Math.min(100, Math.max(0, (number / total) * 100)) * 100) / 100 : 0;
+              return (
+                <li key={i} className="local-reach-bars__item">
+                  {hasIcons && (
+                    <span className="local-reach-bars__icon" aria-hidden="true">
+                      {icons[i]?.src && (
+                        <span className="local-reach-bars__icon-img" style={{ '--lr-icon': `url('${icons[i].src}')` }} />
+                      )}
+                    </span>
+                  )}
+                  <div className="local-reach-bars__content">
+                    <div className="local-reach-bars__header">
+                      <span className="local-reach-bars__title">{title}</span>
+                      <span className="local-reach-bars__number"><CountUp value={number.toLocaleString('en-US')} /></span>
+                    </div>
+                    <div
+                      className="local-reach-bars__track"
+                      role="progressbar"
+                      aria-label={title}
+                      aria-valuemin="0"
+                      aria-valuemax="100"
+                      aria-valuenow={percent}
+                    >
+                      <div className="local-reach-bars__fill" style={{ width: `${percent}%` }} />
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      );
+    }
+  compiled: |
+    import { jsx, jsxs } from "react/jsx-runtime";
+    import { useEffect, useRef, useState } from "preact/hooks";
+    const LR_DURATION = 2200;
+    const LR_NUMBER = /^([^\d]*?)(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?([^\d]*)$/;
+    function lrParse(text) {
+      const m = text.match(LR_NUMBER);
+      if (!m) return null;
+      const decimals = m[3] ? m[3].length - 1 : 0;
+      const target = parseFloat(m[2].replace(/,/g, "") + (m[3] || ""));
+      if (!isFinite(target)) return null;
+      return {
+        prefix: m[1],
+        suffix: m[4],
+        target,
+        decimals,
+        formatter: new Intl.NumberFormat("en-US", {
+          minimumFractionDigits: decimals,
+          maximumFractionDigits: decimals,
+          useGrouping: m[2].indexOf(",") !== -1
+        })
+      };
+    }
+    function lrFormat(value, data) {
+      return data.prefix + data.formatter.format(value) + data.suffix;
+    }
+    function CountUp({ value }) {
+      const text = String(value ?? "").trim();
+      const data = lrParse(text);
+      const ref = useRef(null);
+      const [shown, setShown] = useState(data ? lrFormat(0, data) : text);
+      useEffect(() => {
+        if (!data) return void 0;
+        const reduced = !("IntersectionObserver" in window) || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        if (reduced) {
+          setShown(text);
+          return void 0;
+        }
+        setShown(lrFormat(0, data));
+        let frame;
+        const observer = new IntersectionObserver((entries) => {
+          if (!entries[0].isIntersecting) return;
+          observer.disconnect();
+          let start = 0;
+          const factor = Math.pow(10, data.decimals);
+          const step = (time) => {
+            if (!start) start = time;
+            const progress = Math.min((time - start) / LR_DURATION, 1);
+            const current = progress < 1 ? Math.floor(progress * data.target * factor) / factor : data.target;
+            setShown(lrFormat(current, data));
+            if (progress < 1) frame = window.requestAnimationFrame(step);
+          };
+          frame = window.requestAnimationFrame(step);
+        }, { threshold: 1 });
+        observer.observe(ref.current);
+        return () => {
+          observer.disconnect();
+          window.cancelAnimationFrame(frame);
+        };
+      }, [text]);
+      if (!data) return text;
+      return /* @__PURE__ */ jsxs("span", { ref, className: "local-reach-count-up", children: [
+        /* @__PURE__ */ jsx("span", { className: "local-reach-count-up__final", children: text }),
+        /* @__PURE__ */ jsx("span", { className: "local-reach-count-up__value", "aria-hidden": "true", children: shown })
+      ] });
+    }
+    function ProgressBars({
+      titles = [],
+      numbers = [],
+      total = 0,
+      icons = [],
+      background = "#f2f7fb",
+      lineColor = "#1f2a90",
+      iconBackground = "#b5dbe9"
+    }) {
+      const hasIcons = icons.some((icon) => icon?.src);
+      return /* @__PURE__ */ jsx(
+        "div",
+        {
+          className: "local-reach-bars",
+          style: { "--lr-bg": background, "--lr-line": lineColor, "--lr-icon-bg": iconBackground },
+          children: /* @__PURE__ */ jsx("ul", { className: "local-reach-bars__list", children: titles.map((title, i) => {
+            const number = Number(numbers[i] ?? 0);
+            const percent = total > 0 ? Math.round(Math.min(100, Math.max(0, number / total * 100)) * 100) / 100 : 0;
+            return /* @__PURE__ */ jsxs("li", { className: "local-reach-bars__item", children: [
+              hasIcons && /* @__PURE__ */ jsx("span", { className: "local-reach-bars__icon", "aria-hidden": "true", children: icons[i]?.src && /* @__PURE__ */ jsx("span", { className: "local-reach-bars__icon-img", style: { "--lr-icon": `url('${icons[i].src}')` } }) }),
+              /* @__PURE__ */ jsxs("div", { className: "local-reach-bars__content", children: [
+                /* @__PURE__ */ jsxs("div", { className: "local-reach-bars__header", children: [
+                  /* @__PURE__ */ jsx("span", { className: "local-reach-bars__title", children: title }),
+                  /* @__PURE__ */ jsx("span", { className: "local-reach-bars__number", children: /* @__PURE__ */ jsx(CountUp, { value: number.toLocaleString("en-US") }) })
+                ] }),
+                /* @__PURE__ */ jsx(
+                  "div",
+                  {
+                    className: "local-reach-bars__track",
+                    role: "progressbar",
+                    "aria-label": title,
+                    "aria-valuemin": "0",
+                    "aria-valuemax": "100",
+                    "aria-valuenow": percent,
+                    children: /* @__PURE__ */ jsx("div", { className: "local-reach-bars__fill", style: { width: `${percent}%` } })
+                  }
+                )
+              ] })
+            ] }, i);
+          }) })
+        }
+      );
+    }
+    export {
+      ProgressBars as default
+    };
+css:
+  original: |
+    .local-reach-count-up {
+      display: inline-grid;
+    }
+
+    .local-reach-count-up__final,
+    .local-reach-count-up__value {
+      grid-area: 1 / 1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .local-reach-count-up__final {
+      opacity: 0;
+    }
+
+    .local-reach-bars {
+      --lr-bg: #f2f7fb;
+      --lr-line: #1f2a90;
+      --lr-icon-bg: #b5dbe9;
+      padding: 1.5rem;
+      border-radius: 1.5rem;
+      background: var(--lr-bg);
+      box-sizing: border-box;
+      margin-top: 60px;
+    }
+
+    .local-reach-bars__list {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .local-reach-bars__item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin: 0;
+    }
+
+    .local-reach-bars__icon {
+      position: relative;
+      flex: 0 0 auto;
+      width: 4rem;
+      height: 4rem;
+      border-radius: 1rem;
+      overflow: hidden;
+      background: var(--lr-icon-bg);
+    }
+    .local-reach-bars__icon-img {
+      position: absolute;
+      inset: 0.8rem;
+      background: var(--lr-icon) center / contain no-repeat;
+    }
+
+    .local-reach-bars__content {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .local-reach-bars__header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 1rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .local-reach-bars__title {
+      color: #4f535a;
+      font-size: 1.5rem;
+      line-height: 1.2;
+      font-weight: 400;
+    }
+
+    .local-reach-bars__number {
+      flex: 0 0 auto;
+      color: var(--lr-line);
+      font-size: 1.5rem;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .local-reach-bars__track {
+      position: relative;
+      height: 10px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: var(--lr-icon-bg);
+    }
+    .local-reach-bars__fill {
+      position: relative;
+      height: 100%;
+      border-radius: 999px;
+      background: var(--lr-line);
+    }
+    @media (max-width: 1279.98px) {
+      .local-reach-bars {
+        margin-bottom: 24px;
+      }
+    }
+
+    @media (max-width: 1023.98px) {
+      .local-reach-bars__title {
+        font-size: 1.25rem;
+      }
+      .local-reach-bars__number {
+        font-size: 1.25rem;
+      }
+    }
+  compiled: |
+    .local-reach-count-up {
+      display: inline-grid;
+    }
+
+    .local-reach-count-up__final,
+    .local-reach-count-up__value {
+      grid-area: 1 / 1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .local-reach-count-up__final {
+      opacity: 0;
+    }
+
+    .local-reach-bars {
+      --lr-bg: #f2f7fb;
+      --lr-line: #1f2a90;
+      --lr-icon-bg: #b5dbe9;
+      padding: 1.5rem;
+      border-radius: 1.5rem;
+      background: var(--lr-bg);
+      box-sizing: border-box;
+      margin-top: 60px;
+    }
+
+    .local-reach-bars__list {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .local-reach-bars__item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin: 0;
+    }
+
+    .local-reach-bars__icon {
+      position: relative;
+      flex: 0 0 auto;
+      width: 4rem;
+      height: 4rem;
+      border-radius: 1rem;
+      overflow: hidden;
+      background: var(--lr-icon-bg);
+    }
+    .local-reach-bars__icon-img {
+      position: absolute;
+      inset: 0.8rem;
+      background: var(--lr-icon) center / contain no-repeat;
+    }
+
+    .local-reach-bars__content {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .local-reach-bars__header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 1rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .local-reach-bars__title {
+      color: #4f535a;
+      font-size: 1.5rem;
+      line-height: 1.2;
+      font-weight: 400;
+    }
+
+    .local-reach-bars__number {
+      flex: 0 0 auto;
+      color: var(--lr-line);
+      font-size: 1.5rem;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .local-reach-bars__track {
+      position: relative;
+      height: 10px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: var(--lr-icon-bg);
+    }
+    .local-reach-bars__fill {
+      position: relative;
+      height: 100%;
+      border-radius: 999px;
+      background: var(--lr-line);
+    }
+    @media (max-width: 1279.98px) {
+      .local-reach-bars {
+        margin-bottom: 24px;
+      }
+    }
+
+    @media (max-width: 1023.98px) {
+      .local-reach-bars__title {
+        font-size: 1.25rem;
+      }
+      .local-reach-bars__number {
+        font-size: 1.25rem;
+      }
+    }
+dataDependencies: {  }
